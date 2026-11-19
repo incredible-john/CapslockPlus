@@ -23,6 +23,7 @@ namespace CapslockPlus
         private bool _capsDown;
         private bool _disposed;
         private readonly HashSet<uint> _mappedKeys = new();
+        private readonly HashSet<uint> _shiftMappedKeys = new();
 
         public TrayApplicationContext()
         {
@@ -44,7 +45,7 @@ namespace CapslockPlus
                 _trayIcon = new NotifyIcon
                 {
                     Icon = SystemIcons.Application,
-                    Text = "CapslockPlus - Caps Lock + J/K/L/U",
+                    Text = "CapslockPlus - Caps Lock + S/F/E/D/P/;/U/O",
                     ContextMenuStrip = _trayMenu,
                     Visible = true
                 };
@@ -77,18 +78,24 @@ namespace CapslockPlus
                     return (IntPtr)1;
                 }
 
-                if (TryGetArrow(keyInfo.vkCode, out ushort arrow))
+                if (TryGetMappedKey(keyInfo.vkCode, out ushort mappedKey, out bool requiresShift))
                 {
                     if (isDown && _capsDown)
                     {
                         _mappedKeys.Add(keyInfo.vkCode);
-                        SendArrow(arrow, keyUp: false);
+                        if (requiresShift && _shiftMappedKeys.Add(keyInfo.vkCode) && _shiftMappedKeys.Count == 1)
+                            SendMappedKey(0xA0, keyUp: false);
+
+                        SendMappedKey(mappedKey, keyUp: false);
                         return (IntPtr)1;
                     }
 
                     if (isUp && _mappedKeys.Remove(keyInfo.vkCode))
                     {
-                        SendArrow(arrow, keyUp: true);
+                        SendMappedKey(mappedKey, keyUp: true);
+                        if (_shiftMappedKeys.Remove(keyInfo.vkCode) && _shiftMappedKeys.Count == 0)
+                            SendMappedKey(0xA0, keyUp: true);
+
                         return (IntPtr)1;
                     }
                 }
@@ -97,21 +104,26 @@ namespace CapslockPlus
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
-        private static bool TryGetArrow(uint key, out ushort arrow)
+        private static bool TryGetMappedKey(uint key, out ushort mappedKey, out bool requiresShift)
         {
-            arrow = key switch
+            mappedKey = key switch
             {
-                0x4A => 0x25, // J -> 左
-                0x4B => 0x28, // K -> 下
-                0x4C => 0x27, // L -> 右
-                0x55 => 0x26, // U -> 上
+                0x53 => 0x25, // S -> 左
+                0x46 => 0x27, // F -> 右
+                0x45 => 0x26, // E -> 上
+                0x44 => 0x28, // D -> 下
+                0x50 => 0x24, // P -> Home
+                0xBA => 0x23, // ; -> End
+                0x55 => 0x24, // U -> Shift+Home
+                0x4F => 0x23, // O -> Shift+End
                 _ => 0
             };
+            requiresShift = key == 0x55 || key == 0x4F;
 
-            return arrow != 0;
+            return mappedKey != 0;
         }
 
-        private static void SendArrow(ushort key, bool keyUp)
+        private static void SendMappedKey(ushort key, bool keyUp)
         {
             var input = new INPUT
             {
@@ -141,11 +153,15 @@ namespace CapslockPlus
 
                 foreach (uint sourceKey in _mappedKeys)
                 {
-                    if (TryGetArrow(sourceKey, out ushort arrow))
-                        SendArrow(arrow, keyUp: true);
+                    if (TryGetMappedKey(sourceKey, out ushort mappedKey, out _))
+                        SendMappedKey(mappedKey, keyUp: true);
                 }
 
+                if (_shiftMappedKeys.Count > 0)
+                    SendMappedKey(0xA0, keyUp: true);
+
                 _mappedKeys.Clear();
+                _shiftMappedKeys.Clear();
 
                 if (_hook != IntPtr.Zero)
                 {
