@@ -19,6 +19,7 @@ namespace CapslockPlus
         private readonly HookProc _hookProc;
         private readonly NotifyIcon _trayIcon;
         private readonly ContextMenuStrip _trayMenu;
+        private Icon? _appIcon;
         private IntPtr _hook;
         private bool _capsDown;
         private bool _disposed;
@@ -39,12 +40,15 @@ namespace CapslockPlus
                 if (_hook == IntPtr.Zero)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
 
+                _appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+                    ?? throw new InvalidOperationException("Unable to load the application icon.");
+
                 _trayMenu = new ContextMenuStrip();
                 _trayMenu.Items.Add("退出", null, (_, _) => ExitThread());
 
                 _trayIcon = new NotifyIcon
                 {
-                    Icon = SystemIcons.Application,
+                    Icon = _appIcon,
                     Text = "CapslockPlus - Caps Lock + S/F/E/D/P/;/U/O",
                     ContextMenuStrip = _trayMenu,
                     Visible = true
@@ -55,6 +59,7 @@ namespace CapslockPlus
                 if (_hook != IntPtr.Zero)
                     UnhookWindowsHookEx(_hook);
 
+                _appIcon?.Dispose();
                 _trayMenu?.Dispose();
                 throw;
             }
@@ -171,6 +176,7 @@ namespace CapslockPlus
 
                 _trayIcon.Visible = false;
                 _trayIcon.Dispose();
+                _appIcon?.Dispose();
                 _trayMenu.Dispose();
             }
 
